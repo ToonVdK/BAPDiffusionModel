@@ -1,2 +1,5 @@
 [safe]
 	directory = /home/jovyan
+[user]
+	email = vandekeere.toon@gmail.com
+	name = ToonVdK
