@@ -12,14 +12,14 @@ def evaluate_ai_climatology(target_var):
     if target_var == "lst":
         real_path = './data/processed/aligned_lst.nc'
         nc_var = 'LST_PMW'
-        ai_path = './data/generated/ai_generated_lst_3000days.npy'
+        ai_path = './data/generated/ai_generated_lst_3000days_epoch_300.npy'
         unit = "K"
         title_name = "LST"
         cmap_mean = 'inferno'
     elif target_var == "sm":
         real_path = './data/processed/aligned_sm.nc'
         nc_var = 'sm'
-        ai_path = './data/generated/ai_generated_sm_3000days.npy'
+        ai_path = './data/generated/ai_generated_sm_3000days_epoch_300.npy'
         unit = "m³/m³"
         title_name = "Soil Moisture"
         cmap_mean = 'YlGnBu'

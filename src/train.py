@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
+import xarray as xr
 from torch.utils.data import DataLoader, random_split
 from diffusers import DDPMScheduler
 from diffusers.training_utils import EMAModel
@@ -30,6 +31,18 @@ class EarlyStopper:
             if self.counter >= self.patience:
                 self.early_stop = True
 
+TEST_STEP = 5
+def get_train_indices():
+    # Load one of the NetCDFs just to know the total number of summer days
+    ds = xr.open_dataset('./data/processed/aligned_lst.nc')
+    valid_months = [5,6,7,8,9]
+    summer = ds.sel(time=ds['time'].dt.month.isin(valid_months))
+    n_total = len(summer['time'])
+    ds.close()
+    test_idx = np.arange(0, n_total, TEST_STEP)
+    train_idx = np.setdiff1d(np.arange(n_total), test_idx)
+    return train_idx
+
 def train():
     """
     Trains the model using a masked loss function
@@ -38,15 +51,16 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on device: {device}")
 
-    batch_size = 16  # Power of 2
+    batch_size = 32  # Power of 2
     epochs = 300
     learning_rate = 1e-4
     weight_decay = 1e-4  # L2 Regularization
 
     # --- INITIALIZE DATA & SPLIT ---
     full_dataset = SatelliteDataset(
-        lst_path='./data/processed/aligned_lst.nc',
-        sm_path='./data/processed/aligned_sm.nc'
+    lst_path='./data/processed/aligned_lst.nc',
+    sm_path='./data/processed/aligned_sm.nc',
+    indices=get_train_indices()  # Use only training days
     )
     # Split data 80% Train, 20% Validation
     train_size = int(0.8 * len(full_dataset))

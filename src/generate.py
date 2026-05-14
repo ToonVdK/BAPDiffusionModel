@@ -45,4 +45,4 @@ def generate_bulk_samples(num_days=100, epoch_to_load=100):
     print(f"SM Data shape  {gen_sm_norm.shape} saved to: {sm_save_path}")
 
 if __name__ == "__main__":
-    generate_bulk_samples(num_days=3000, epoch_to_load=140)
+    generate_bulk_samples(num_days=3000, epoch_to_load=300)

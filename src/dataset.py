@@ -6,32 +6,30 @@ import numpy as np
 
 
 class SatelliteDataset(Dataset):
-    def __init__(self, lst_path, sm_path):
+    def __init__(self, lst_path, sm_path, indices=None):
         """
-        Loads the processed NetCDF files into memory and calculates global normalization stats.
+        indices : array-like or None. If provided, only those time indices
+                  are used. Otherwise the full (summer) dataset is kept.
         """
         print("Loading datasets into memory...")
-        
-        # 1. Open the full datasets (keeping the metadata intact)
         lst_full = xr.open_dataset(lst_path)
         sm_full = xr.open_dataset(sm_path)
-        
-        # 2. Filter for May (5) through September (9)
-        # (Assuming your time dimension is named 'time'. If it's named 'date' or something else, change it here!)
+
         valid_months = [5, 6, 7, 8, 9]
         print(f"Filtering dataset for months: {valid_months}...")
-        
         lst_summer = lst_full.sel(time=lst_full['time'].dt.month.isin(valid_months))
         sm_summer = sm_full.sel(time=sm_full['time'].dt.month.isin(valid_months))
-        
-        # 3. Extract the raw NumPy arrays now that the winter data is gone
+
         self.lst_data = lst_summer['LST_PMW'].values
         self.sm_data = sm_summer['sm'].values
 
-        # Ensure they have the same number of days
+        # Apply optional index selection
+        if indices is not None:
+            self.lst_data = self.lst_data[indices]
+            self.sm_data = self.sm_data[indices]
+
         assert self.lst_data.shape[0] == self.sm_data.shape[0], "Mismatch in number of days!"
         self.num_days = self.lst_data.shape[0]
-        
         print(f"Data successfully filtered. Remaining Summer Days: {self.num_days}")
 
         print("Calculating global normalization statistics...")
