@@ -1,0 +1,140 @@
+import sys
+import numpy as np
+import xarray as xr
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+def plot_random_samples(target_var):
+    # --- 0. CONFIGURATION BASED ON PARAMETER ---
+    if target_var == "lst":
+        real_path = './data/processed/aligned_lst.nc'
+        nc_var = 'LST_PMW'
+        copula_path = './data/generated/copula_gaussian_lst_3000days.npy' 
+        ai_path = './data/generated/ai_generated_lst_3000days.npy'
+        unit = "K"
+        title_name = "LST"
+        cmap_sample = 'magma'
+    elif target_var == "sm":
+        real_path = './data/processed/aligned_sm.nc'
+        nc_var = 'sm'
+        copula_path = './data/generated/copula_gaussian_sm_3000days.npy'
+        ai_path = './data/generated/ai_generated_sm_3000days.npy'
+        unit = "m³/m³"
+        title_name = "Soil Moisture"
+        cmap_sample = 'GnBu'
+    else:
+        print("Error: Parameter must be 'lst' or 'sm'")
+        sys.exit(1)
+
+    print(f"--- 1. LOADING DATA ({title_name}) ---")
+    # Load Real Data strictly to get the min/max bounds and the land mask
+    lst_ds_full = xr.open_dataset(real_path)
+    valid_months = [5, 6, 7, 8, 9]
+    lst_summer = lst_ds_full.sel(time=lst_ds_full['time'].dt.month.isin(valid_months))
+    real_lst = lst_summer[nc_var].values
+    lst_min, lst_max = np.nanmin(real_lst), np.nanmax(real_lst)
+    
+    real_grid = real_lst[:, 0:32, 0:32]
+    land_mask = ~np.isnan(np.nanmean(real_grid, axis=0))
+
+    # --- EXTRACT SPATIAL EXTENT FOR BORDERS ---
+    # Automatically find the coordinate names and grab the boundaries of the 32x32 slice
+    lat_name = 'lat' if 'lat' in lst_ds_full.coords else 'latitude'
+    lon_name = 'lon' if 'lon' in lst_ds_full.coords else 'longitude'
+    
+    lats = lst_ds_full[lat_name].values[0:32]
+    lons = lst_ds_full[lon_name].values[0:32]
+    map_extent = [np.min(lons), np.max(lons), np.min(lats), np.max(lats)]
+
+    try:
+        # Load Copula Data
+        copula_flat = np.load(copula_path)
+        copula_grid = copula_flat.reshape(3000, 32, 32)
+    except FileNotFoundError:
+        print(f"Error: Could not find Copula file at {copula_path}")
+        sys.exit(1)
+
+    try:
+        # Load A.I. Data
+        gen_lst_norm = np.load(ai_path)
+        ai_grid = ((gen_lst_norm + 1) / 2) * (lst_max - lst_min) + lst_min
+    except FileNotFoundError:
+        print(f"Error: Could not find A.I. file at {ai_path}")
+        sys.exit(1)
+
+    print("--- 2. SELECTING RANDOM SAMPLES ---")
+    # Generate 4 unique random indices for the generated data (out of 3000)
+    random_gen_indices = np.random.choice(3000, 4, replace=False)
+    
+    # Generate 4 unique random indices for the real data 
+    num_real_days = real_grid.shape[0]
+    random_real_indices = np.random.choice(num_real_days, 4, replace=False)
+    
+    print(f"Selected generated indices: {random_gen_indices}")
+    print(f"Selected real indices: {random_real_indices}")
+
+    print("--- 3. PLOTTING 3x4 GRID ---")
+    # Increased figsize height from 10 to 14 to accommodate the third row
+    fig, axes = plt.subplots(3, 4, figsize=(22, 14), subplot_kw={'projection': ccrs.PlateCarree()})
+
+    for i in range(4):
+        gen_idx = random_gen_indices[i]
+        real_idx = random_real_indices[i]
+
+        # --- ROW 1: COPULA PROCESSING ---
+        copula_sample = copula_grid[gen_idx]
+        copula_masked = np.where(land_mask, copula_sample, np.nan)
+        
+        im_cop = axes[0, i].imshow(copula_masked, cmap=cmap_sample, origin='lower',
+                                   extent=map_extent, transform=ccrs.PlateCarree())
+        axes[0, i].set_title(f"Copula Synthetic Day (Idx: {gen_idx})", fontsize=12)
+        axes[0, i].axis('off')
+        axes[0, i].add_feature(cfeature.BORDERS, edgecolor='black', linewidth=1)
+        axes[0, i].add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+        fig.colorbar(im_cop, ax=axes[0, i], shrink=0.7, label=f"{title_name} ({unit})")
+
+        # --- ROW 2: A.I. PROCESSING ---
+        ai_sample = ai_grid[gen_idx]
+        ai_masked = np.where(land_mask, ai_sample, np.nan)
+        
+        im_ai = axes[1, i].imshow(ai_masked, cmap=cmap_sample, origin='lower',
+                                  extent=map_extent, transform=ccrs.PlateCarree())
+        axes[1, i].set_title(f"U-Net Synthetic Day (Idx: {gen_idx})", fontsize=12)
+        axes[1, i].axis('off')
+        axes[1, i].add_feature(cfeature.BORDERS, edgecolor='black', linewidth=1)
+        axes[1, i].add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+        fig.colorbar(im_ai, ax=axes[1, i], shrink=0.7, label=f"{title_name} ({unit})")
+
+        # --- ROW 3: REAL DATA PROCESSING ---
+        real_sample = real_grid[real_idx]
+        real_masked = np.where(land_mask, real_sample, np.nan)
+        
+        im_real = axes[2, i].imshow(real_masked, cmap=cmap_sample, origin='lower',
+                                  extent=map_extent, transform=ccrs.PlateCarree())
+        axes[2, i].set_title(f"Real Observation (Idx: {real_idx})", fontsize=12)
+        axes[2, i].axis('off')
+        axes[2, i].add_feature(cfeature.BORDERS, edgecolor='black', linewidth=1)
+        axes[2, i].add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+        fig.colorbar(im_real, ax=axes[2, i], shrink=0.7, label=f"{title_name} ({unit})")
+
+    # Formatting the overall figure
+    # Adjusted the y-coordinates of the text to align perfectly with the three rows
+    fig.text(0.09, 0.80, 'Gaussian Copula', va='center', ha='center', rotation='vertical', fontsize=16)
+    fig.text(0.09, 0.50, 'Diffusion U-Net', va='center', ha='center', rotation='vertical', fontsize=16)
+    fig.text(0.09, 0.20, 'Real Observations', va='center', ha='center', rotation='vertical', fontsize=16)
+
+    plt.suptitle(f"Generative Diversity vs. Reality ({title_name})", fontsize=20, y=0.98)
+    plt.tight_layout(rect=[0.1, 0, 1, 0.95]) 
+    
+    save_filename = f'random_{target_var}_samples_3x4_comparison.png'
+    plt.savefig(save_filename, dpi=150, bbox_inches='tight', facecolor='white')
+    print(f"Saved '{save_filename}'")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python script.py [lst|sm]")
+        sys.exit(1)
+        
+    target_variable = sys.argv[1].lower()
+    plot_random_samples(target_variable)

@@ -1,0 +1,13 @@
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+.env
+data/
+.bash_history
+.conda/
+.cache/
+.config/
+.local/
+.nv/
+.ipython/
+.jupyter/
