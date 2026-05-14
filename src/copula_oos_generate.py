@@ -1,9 +1,9 @@
-# generate_bivariate_gaussian_systematic.py
 import time, warnings, sys, os
 import numpy as np
 import pandas as pd
 import xarray as xr
 from scipy.stats import rankdata
+from scipy.spatial import cKDTree
 from copulas.multivariate import GaussianMultivariate
 
 def generate_2048d_systematic(test_step=5):
@@ -82,6 +82,20 @@ def generate_2048d_systematic(test_step=5):
 
     syn_lst = syn_physical[:, :1024].reshape(n_test, 32, 32)
     syn_sm  = syn_physical[:, 1024:].reshape(n_test, 32, 32)
+
+    # Flatten the training data (the same combined_train used for fitting)
+    train_flat = combined_train  # shape (n_train, 2048)
+    syn_flat = syn_physical        # shape (n_test, 2048)
+
+    # For each synthetic sample, find the nearest training sample (Euclidean distance)
+    tree = cKDTree(train_flat)
+    distances, indices = tree.query(syn_flat, k=1)
+    print("Nearest neighbour distances to training set:")
+    print(f"  Mean distance: {np.mean(distances):.6f}")
+    print(f"  Std distance:  {np.std(distances):.6f}")
+    print(f"  Min distance:  {np.min(distances):.6f}")
+    print(f"  Max distance:  {np.max(distances):.6f}")
+    print(f"  Fraction of samples with distance < 1e-6: {np.mean(distances < 1e-6)*100:.1f}%")
 
     # Save synthetic and real test arrays
     out_dir = "./data/generated"
