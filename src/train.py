@@ -7,6 +7,7 @@ from diffusers import DDPMScheduler
 from diffusers.training_utils import EMAModel
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from split_utils import get_chronological_split
 
 from dataset import SatelliteDataset
 from model import get_satellite_unet
@@ -31,18 +32,6 @@ class EarlyStopper:
             if self.counter >= self.patience:
                 self.early_stop = True
 
-TEST_STEP = 5
-def get_train_indices():
-    # Load one of the NetCDFs just to know the total number of summer days
-    ds = xr.open_dataset('./data/processed/aligned_lst.nc')
-    valid_months = [5,6,7,8,9]
-    summer = ds.sel(time=ds['time'].dt.month.isin(valid_months))
-    n_total = len(summer['time'])
-    ds.close()
-    test_idx = np.arange(0, n_total, TEST_STEP)
-    train_idx = np.setdiff1d(np.arange(n_total), test_idx)
-    return train_idx
-
 def train():
     """
     Trains the model using a masked loss function
@@ -51,18 +40,19 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on device: {device}")
 
-    batch_size = 32  # Power of 2
+    batch_size = 16  # Power of 2
     epochs = 300
     learning_rate = 1e-4
     weight_decay = 1e-4  # L2 Regularization
 
     # --- INITIALIZE DATA & SPLIT ---
+    train_idx, _ = get_chronological_split(train_ratio=0.8)   # 80% for training, 20% for test (held out)
     full_dataset = SatelliteDataset(
-    lst_path='./data/processed/aligned_lst.nc',
-    sm_path='./data/processed/aligned_sm.nc',
-    indices=get_train_indices()  # Use only training days
+        lst_path='./data/processed/aligned_lst.nc',
+        sm_path='./data/processed/aligned_sm.nc',
+        indices=train_idx  # Only the chronological training days
     )
-    # Split data 80% Train, 20% Validation
+    # Split the training days further into train/validation (random)
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])

@@ -5,14 +5,14 @@ import xarray as xr
 from scipy.stats import rankdata
 from scipy.spatial import cKDTree
 from copulas.multivariate import GaussianMultivariate
+from split_utils import get_chronological_split   # <-- import
 
-def generate_2048d_systematic(test_step=5):
+def generate_2048d_chronological(train_ratio=0.8):
     """
-    Fit a 2048‑D Gaussian copula on a systematic train/test split.
-    test_step : int, keep every `test_step`‑th sample for testing (train = all others).
+    Fit a 2048‑D Gaussian copula on a chronological split.
     """
     print(f"\n{'='*60}")
-    print(f"2048D GAUSSIAN COPULA (SYSTEMATIC TEST STEP = {test_step})")
+    print(f"2048D GAUSSIAN COPULA (CHRONOLOGICAL SPLIT, train ratio = {train_ratio})")
     print(f"{'='*60}")
 
     valid_months = [5,6,7,8,9]
@@ -23,21 +23,19 @@ def generate_2048d_systematic(test_step=5):
     sm_summer  = ds_sm.sel( time=ds_sm['time'].dt.month.isin(valid_months))['sm'].values[:, 0:32, 0:32]
 
     n_total = lst_summer.shape[0]
-    # Systematic indices: e.g., test_step=5 => test indices 0,5,10,...
-    test_idx = np.arange(0, n_total, test_step)
-    train_idx = np.setdiff1d(np.arange(n_total), test_idx)
+    train_idx, test_idx = get_chronological_split(train_ratio)
 
     n_train, n_test = len(train_idx), len(test_idx)
     print(f"Total summer days: {n_total}")
-    print(f"Training: {n_train} (every {test_step}‑th day held out)")
-    print(f"Test:     {n_test}")
+    print(f"Training: {n_train} (first {train_ratio*100:.0f}%)")
+    print(f"Test:     {n_test} (last {100 - train_ratio*100:.0f}%)")
 
     train_lst = lst_summer[train_idx].reshape(n_train, 1024)
     test_lst  = lst_summer[test_idx].reshape(n_test, 1024)
     train_sm  = sm_summer[train_idx].reshape(n_train, 1024)
     test_sm   = sm_summer[test_idx].reshape(n_test, 1024)
 
-    # Impute training NaNs
+    # Impute training NaNs (same as before)
     def impute(data):
         col_means = np.nanmean(data, axis=0)
         global_mean = np.nanmean(data)
@@ -53,7 +51,7 @@ def generate_2048d_systematic(test_step=5):
     combined_train = np.hstack([train_lst, train_sm])
     total_dims = combined_train.shape[1]
 
-    # Uniform transform on training data only
+    # Uniform transform on training data (needed for copula)
     epsilon = 1e-10
     u_train = np.zeros_like(combined_train)
     for i in range(total_dims):
@@ -83,11 +81,9 @@ def generate_2048d_systematic(test_step=5):
     syn_lst = syn_physical[:, :1024].reshape(n_test, 32, 32)
     syn_sm  = syn_physical[:, 1024:].reshape(n_test, 32, 32)
 
-    # Flatten the training data (the same combined_train used for fitting)
-    train_flat = combined_train  # shape (n_train, 2048)
-    syn_flat = syn_physical        # shape (n_test, 2048)
-
-    # For each synthetic sample, find the nearest training sample (Euclidean distance)
+    # (Optional) nearest neighbour diagnostic
+    train_flat = combined_train
+    syn_flat = syn_physical
     tree = cKDTree(train_flat)
     distances, indices = tree.query(syn_flat, k=1)
     print("Nearest neighbour distances to training set:")
@@ -97,24 +93,24 @@ def generate_2048d_systematic(test_step=5):
     print(f"  Max distance:  {np.max(distances):.6f}")
     print(f"  Fraction of samples with distance < 1e-6: {np.mean(distances < 1e-6)*100:.1f}%")
 
-    # Save synthetic and real test arrays
+    # Save synthetic and real test arrays (new filenames)
     out_dir = "./data/generated"
     os.makedirs(out_dir, exist_ok=True)
-    lst_cop_path = os.path.join(out_dir, f'copula_gaussian_lst_oos_test_step{test_step}.npy')
-    sm_cop_path  = os.path.join(out_dir, f'copula_gaussian_sm_oos_test_step{test_step}.npy')
-    lst_real_path = os.path.join(out_dir, f'real_lst_oos_test_step{test_step}.npy')
-    sm_real_path  = os.path.join(out_dir, f'real_sm_oos_test_step{test_step}.npy')
+    lst_cop_path = os.path.join(out_dir, 'copula_gaussian_lst_chrono.npy')
+    sm_cop_path  = os.path.join(out_dir, 'copula_gaussian_sm_chrono.npy')
+    lst_real_path = os.path.join(out_dir, 'real_lst_chrono.npy')
+    sm_real_path  = os.path.join(out_dir, 'real_sm_chrono.npy')
 
     np.save(lst_cop_path, syn_lst)
     np.save(sm_cop_path, syn_sm)
     np.save(lst_real_path, test_lst.reshape(n_test, 32, 32))
     np.save(sm_real_path, test_sm.reshape(n_test, 32, 32))
 
-    print("Files saved with suffix 'step{test_step}'.")
+    print("Files saved with '_chrono' suffix.")
     print("Done.")
 
 
 if __name__ == "__main__":
-    # default test_step=5 (20% test)
-    step = int(sys.argv[1]) if len(sys.argv) > 1 else 5
-    generate_2048d_systematic(test_step=step)
+    # Optionally accept train_ratio from command line
+    train_ratio = float(sys.argv[1]) if len(sys.argv) > 1 else 0.8
+    generate_2048d_chronological(train_ratio)

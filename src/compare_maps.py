@@ -11,7 +11,7 @@ def plot_random_samples(target_var):
         real_path = './data/processed/aligned_lst.nc'
         nc_var = 'LST_PMW'
         copula_path = './data/generated/copula_gaussian_lst_3000days.npy' 
-        ai_path = './data/generated/ai_generated_lst_3000days.npy'
+        ai_path = './data/generated/ai_generated_lst_3000days_epoch_100_masked_ocean.npy'
         unit = "K"
         title_name = "LST"
         cmap_sample = 'magma'
@@ -19,7 +19,7 @@ def plot_random_samples(target_var):
         real_path = './data/processed/aligned_sm.nc'
         nc_var = 'sm'
         copula_path = './data/generated/copula_gaussian_sm_3000days.npy'
-        ai_path = './data/generated/ai_generated_sm_3000days.npy'
+        ai_path = './data/generated/ai_generated_sm_3000days_epoch_100_masked_ocean.npy'
         unit = "m³/m³"
         title_name = "Soil Moisture"
         cmap_sample = 'GnBu'

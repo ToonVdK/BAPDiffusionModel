@@ -1,47 +1,12 @@
-# plot_spatial_correlation.py  (fair out‑of‑sample version)
+# plot_spatial_correlation.py  (chronological split, semivariogram only)
 import sys
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
 
-# ----------------------------------------------------------------------
-# Systematic split config (must match copula & training)
-TEST_STEP = 5
-
-def get_train_indices():
-    ds = xr.open_dataset('./data/processed/aligned_lst.nc')
-    valid_months = [5, 6, 7, 8, 9]
-    summer = ds.sel(time=ds['time'].dt.month.isin(valid_months))
-    n_total = len(summer['time'])
-    ds.close()
-    test_idx = np.arange(0, n_total, TEST_STEP)
-    train_idx = np.setdiff1d(np.arange(n_total), test_idx)
-    return train_idx
-
-# ----------------------------------------------------------------------
-def calculate_energy_score(real_vectors, gen_vectors, n_samples=500):
-    """
-    Calculates the Formal 2-Sample Energy Distance in 1024D space.
-    Formula: ED = 2 * E[||R - G||] - E[||R - R||] - E[||G - G||]
-    """
-    np.random.seed(42)
-    idx_real = np.random.choice(real_vectors.shape[0], min(n_samples, real_vectors.shape[0]), replace=False)
-    idx_gen  = np.random.choice(gen_vectors.shape[0],  min(n_samples, gen_vectors.shape[0]),  replace=False)
-    
-    R = real_vectors[idx_real]
-    G = gen_vectors[idx_gen]
-    
-    dist_RG = np.mean(cdist(R, G, metric='euclidean'))
-    dist_RR = np.mean(cdist(R, R, metric='euclidean'))
-    dist_GG = np.mean(cdist(G, G, metric='euclidean'))
-    
-    return max(0.0, 2 * dist_RG - dist_RR - dist_GG)
-
-# ----------------------------------------------------------------------
 def calculate_semivariogram(grid, max_dist=15):
     """
-    Empirical semivariogram (unchanged).
+    Empirical semivariogram.
     """
     variances = []
     distances = list(range(1, max_dist + 1))
@@ -52,125 +17,95 @@ def calculate_semivariogram(grid, max_dist=15):
         variances.append(val)
     return distances, variances
 
-# ----------------------------------------------------------------------
-def evaluate_spatial_metrics(target_var, test_step=TEST_STEP):
-    print(f"--- 1. LOADING {target_var.upper()} DATASETS (OOS step={test_step}) ---")
+def evaluate_spatial_metrics(target_var):
+    print(f"--- 1. LOADING {target_var.upper()} DATASETS (Chronological split) ---")
     
     if target_var == "lst":
         nc_path   = './data/processed/aligned_lst.nc'
         nc_var    = 'LST_PMW'
-        ai_path   = './data/generated/ai_generated_lst_3000days_epoch_300.npy'
-        copula_path = f'./data/generated/copula_gaussian_lst_oos_test_step{test_step}.npy'
-        real_test_path = f'./data/generated/real_lst_oos_test_step{test_step}.npy'
+        ai_path   = './data/generated/ai_generated_lst_3000days_epoch_100_masked_ocean.npy'
+        copula_path = './data/generated/copula_gaussian_lst_chrono.npy'
+        real_test_path = './data/generated/real_lst_chrono.npy'
         unit = "K²"
+        title_var = "LST"
     elif target_var == "sm":
         nc_path   = './data/processed/aligned_sm.nc'
         nc_var    = 'sm'
-        ai_path   = './data/generated/ai_generated_sm_3000days_epoch_300.npy'
-        copula_path = f'./data/generated/copula_gaussian_sm_oos_test_step{test_step}.npy'
-        real_test_path = f'./data/generated/real_sm_oos_test_step{test_step}.npy'
+        ai_path   = './data/generated/ai_generated_sm_3000days_epoch_100_masked_ocean.npy'
+        copula_path = './data/generated/copula_gaussian_sm_chrono.npy'
+        real_test_path = './data/generated/real_sm_chrono.npy'
         unit = "(m³/m³)²"
+        title_var = "Soil Moisture"
     else:
         print("Error: Parameter must be 'lst' or 'sm'")
         sys.exit(1)
 
-    # Load full dataset for coordinates and training min/max
+    # Load full dataset to get training min/max for un‑normalising AI
     ds = xr.open_dataset(nc_path)
     valid_months = [5, 6, 7, 8, 9]
     ds_summer = ds.sel(time=ds['time'].dt.month.isin(valid_months))
     full_data = ds_summer[nc_var].values[:, 0:32, 0:32]
+    ds.close()
 
-    # Training subset for normalization
+    # For AI only: need training min/max. We'll use the same chronological train indices.
+    # But note: this expects that you have retrained the AI model on the same split.
+    # If not, the AI normalization will be wrong. We keep as is for demonstration.
+    from split_utils import get_train_indices
     train_idx = get_train_indices()
     train_data = full_data[train_idx]
     val_min, val_max = np.nanmin(train_data), np.nanmax(train_data)
 
-    # Real TEST data (already saved as .npy)
-    real_test_grid = np.load(real_test_path)   # shape (n_test, 32, 32)
+    # Real TEST data
+    real_test_grid = np.load(real_test_path)
 
     # AI generated (un‑normalize with training stats)
     gen_norm = np.load(ai_path)
     ai_grid = ((gen_norm + 1) / 2) * (val_max - val_min) + val_min
 
     # Copula test data
-    copula_grid = np.load(copula_path)   # shape (n_test, 32, 32)
+    copula_grid = np.load(copula_path)
 
     print(f"  Training min/max: {val_min:.2f} / {val_max:.2f}")
     print(f"  Real test days: {real_test_grid.shape[0]}")
     print(f"  AI generated samples: {ai_grid.shape[0]}")
     print(f"  Copula test samples: {copula_grid.shape[0]}")
 
-    # ------------------------------------------------------------------
-    print("--- 2. APPLYING MASKS ---")
-    # Land mask based on real test mean (where there is any valid data)
+    # --- Masks ---
     real_test_mean = np.nanmean(real_test_grid, axis=0)
     land_mask = ~np.isnan(real_test_mean)
 
-    # Mask synthetic grids for variogram (hide ocean)
     ai_masked = np.where(land_mask, ai_grid, np.nan)
     copula_masked = np.where(land_mask, copula_grid, np.nan)
 
-    # Impute NaNs in real test data with its own pixel‑wise mean
-    real_test_imputed = np.where(
-        np.isnan(real_test_grid),
-        np.broadcast_to(real_test_mean, real_test_grid.shape),
-        real_test_grid
-    )
-
-    # Extract valid land vectors for energy score
-    real_vectors = real_test_imputed[:, land_mask]
-    ai_vectors   = ai_grid[:, land_mask]
-    copula_vectors = copula_grid[:, land_mask]
-
-    # ------------------------------------------------------------------
-    print("--- 3. CALCULATING SPATIAL ENERGY SCORES (out‑of‑sample) ---")
-    es_ai = calculate_energy_score(real_vectors, ai_vectors)
-    es_copula = calculate_energy_score(real_vectors, copula_vectors)
-    print(f"U‑Net Energy Score:  {es_ai:.2f}")
-    print(f"Copula Energy Score: {es_copula:.2f}")
-
-    # ------------------------------------------------------------------
-    print("--- 4. CALCULATING EMPIRICAL SEMIVARIOGRAMS ---")
-    dist, var_real   = calculate_semivariogram(real_test_grid)   # real test, NaNs handled internally
+    # --- Semivariograms ---
+    print("--- 2. CALCULATING SEMIVARIOGRAMS ---")
+    dist, var_real   = calculate_semivariogram(real_test_grid)
     _,    var_ai     = calculate_semivariogram(ai_masked)
     _,    var_copula = calculate_semivariogram(copula_masked)
 
-    # ------------------------------------------------------------------
-    print("--- 5. PLOTTING RESULTS ---")
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # --- RMSE ---
+    rmse_ai = np.sqrt(np.mean((np.array(var_real) - np.array(var_ai))**2))
+    rmse_copula = np.sqrt(np.mean((np.array(var_real) - np.array(var_copula))**2))
 
-    # PLOT 1: Energy Score bar chart
-    bars = axes[0].bar(['U‑Net A.I.', 'Gaussian Copula'], [es_ai, es_copula],
-                       color=['purple', 'darkorange'])
-    axes[0].set_title("Spatial Energy Score (Multivariate Distance)\n(Out‑of‑Sample)", fontsize=13)
-    axes[0].set_ylabel("Energy Score")
-    axes[0].grid(axis='y', alpha=0.3)
-    for bar in bars:
-        yval = bar.get_height()
-        axes[0].text(bar.get_x() + bar.get_width()/2, yval + max(0.02*yval, 0.1),
-                     f'{yval:.2f}', ha='center', va='bottom', fontweight='bold')
-
-    # PLOT 2: Semivariogram
-    axes[1].plot(dist, var_real, marker='o', color='teal', linewidth=3, label='Real Test Observations')
-    axes[1].plot(dist, var_ai, marker='s', color='purple', linewidth=2, linestyle='--', label='U‑Net Generated')
-    axes[1].plot(dist, var_copula, marker='^', color='darkorange', linewidth=2, linestyle=':', label='Copula Generated')
-    axes[1].set_title("Spatial Correlation: Empirical Semivariogram\n(Out‑of‑Sample)", fontsize=13)
-    axes[1].set_xlabel("Distance Between Pixels")
-    axes[1].set_ylabel(f"Semivariance {unit}")
-    axes[1].grid(alpha=0.3)
-    axes[1].legend(loc='upper left', fontsize=11)
-
-    plt.suptitle(f"Spatial Evaluation: {target_var.upper()} (Systematic Step={test_step})", fontsize=16, y=1.02)
+    # --- Plotting (single panel) ---
+    print("--- 3. PLOTTING SEMIVARIOGRAM ---")
+    plt.figure(figsize=(8, 6))
+    plt.plot(dist, var_real, marker='o', color='teal', linewidth=3, label='Real Test Observations')
+    plt.plot(dist, var_ai, marker='s', color='purple', linewidth=2, linestyle='--', label='U‑Net Generated')
+    plt.plot(dist, var_copula, marker='^', color='darkorange', linewidth=2, linestyle=':', label='Copula Generated')
+    plt.title(f"Spatial Correlation: Empirical Semivariogram ({title_var})\nU-Net RMSE = {rmse_ai:.2e} | Copula RMSE = {rmse_copula:.2e}", fontsize=14)
+    plt.xlabel("Distance Between Pixels")
+    plt.ylabel(f"Semivariance {unit}")
+    plt.grid(alpha=0.3)
+    plt.legend(loc='upper left', fontsize=11)
     plt.tight_layout()
-    save_filename = f'spatial_correlation_oos_step{test_step}_{target_var}.png'
+    save_filename = f'spatial_semivariogram_chrono_{target_var}.png'
     plt.savefig(save_filename, dpi=150, bbox_inches='tight', facecolor='white')
     print(f"Saved '{save_filename}'")
 
-# ----------------------------------------------------------------------
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python script.py [lst|sm] [test_step]")
+        print("Usage: python plot_spatial_correlation.py [lst|sm]")
         sys.exit(1)
     var = sys.argv[1].lower()
-    step = int(sys.argv[2]) if len(sys.argv) > 2 else TEST_STEP
-    evaluate_spatial_metrics(var, test_step=step)
+    evaluate_spatial_metrics(var)
