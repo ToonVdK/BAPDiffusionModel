@@ -1,4 +1,3 @@
-# src/split_utils.py
 import numpy as np
 import xarray as xr
 
@@ -19,7 +18,9 @@ def get_chronological_split(train_ratio=0.8):
     return train_idx, test_idx
 
 def get_train_indices():
-    """Convenience function for training scripts (returns only train indices)."""
+    """
+    Convenience function for training scripts (returns only train indices).
+    """
     train_idx, _ = get_chronological_split()
     return train_idx
 

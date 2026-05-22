@@ -4,12 +4,11 @@ import torch.nn.functional as F
 import xarray as xr
 import numpy as np
 
-
 class SatelliteDataset(Dataset):
     def __init__(self, lst_path, sm_path, indices=None):
         """
         indices : array-like or None. If provided, only those time indices
-                  are used. Otherwise the full (summer) dataset is kept.
+                  are used. Otherwise the full dataset is kept.
         """
         print("Loading datasets into memory...")
         lst_full = xr.open_dataset(lst_path)
@@ -33,7 +32,7 @@ class SatelliteDataset(Dataset):
         print(f"Data successfully filtered. Remaining Summer Days: {self.num_days}")
 
         print("Calculating global normalization statistics...")
-        # Calculate global mins and maxes, ignoring the NaNs (clouds)
+        # Calculate global mins and maxes, ignoring the NaNs
         self.lst_min = np.nanmin(self.lst_data)
         self.lst_max = np.nanmax(self.lst_data)
 
@@ -48,8 +47,8 @@ class SatelliteDataset(Dataset):
 
     def normalize(self, data, min_val, max_val):
         """
-            Scales array to [-1, 1] range. Normalization is also used in the MisDiff paper.
-            It's needed to avoid exploding gradients during the backward pass.
+        Scales array to [-1, 1] range. Normalization is also used in the MisDiff paper.
+        It's needed to avoid exploding gradients during the backward pass.
         """
         return 2 * ((data - min_val) / (max_val - min_val)) - 1
 
@@ -86,9 +85,8 @@ class SatelliteDataset(Dataset):
         # Shape becomes (2, Height, Width)
         x_tensor = torch.cat([lst_tensor, sm_tensor], dim=0)
 
-        # Pad to (32, 64) --> Multiples of 8 (see model.py for the reasoning behind this)
-        # The data is currently (Height, Width) = (30,50) --> OUTDATED COMMENTARY
-        # We need to add 14 pixels to Width (Right) and 2 pixels to Height (Bottom)
+        # Optional: Pad the data --> If you want to use other shapes such as (32, 64)
+        # Pad rows/columns to multiples of 8 (see model.py for the reasoning behind this)
         # Since we're using MissDiff there is no harm in padding, it will be ignored by the loss function.
         # Format: (left, right, top, bottom)
         pad_amounts = (0, 0, 0, 0)  # For now, no padding is needed since the shape is 32 x 32 already

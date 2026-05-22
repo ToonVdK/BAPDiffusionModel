@@ -1,4 +1,3 @@
-# plot_bivariate_energy_maps.py  (chronological split with mean values in titles)
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
@@ -38,7 +37,7 @@ def calculate_bivariate_energy_distance(real_pts, gen_pts, subsample=500):
     return max(0.0, energy_distance)
 
 def generate_bivariate_heatmaps_chrono():
-    print("--- 1. LOADING REAL & TRAINING DATA FOR NORMALIZATION ---")
+    print("--- LOADING REAL & TRAINING DATA FOR NORMALIZATION ---")
     ds_lst = xr.open_dataset('./data/processed/aligned_lst.nc')
     ds_sm  = xr.open_dataset('./data/processed/aligned_sm.nc')
     valid_months = [5, 6, 7, 8, 9]
@@ -63,21 +62,21 @@ def generate_bivariate_heatmaps_chrono():
     ds_lst.close()
     ds_sm.close()
 
-    print("--- 2. LOADING REAL TEST SET (Chronological) ---")
+    print("--- LOADING REAL TEST SET (Chronological) ---")
     real_lst_test = np.load('./data/generated/real_lst_chrono.npy')
     real_sm_test  = np.load('./data/generated/real_sm_chrono.npy')
 
-    print("--- 3. LOADING AI GENERATED DATA ---")
+    print("--- LOADING AI GENERATED DATA ---")
     ai_norm_lst = np.load('./data/generated/ai_generated_lst_3000days_epoch_100_masked_ocean.npy')
     ai_norm_sm  = np.load('./data/generated/ai_generated_sm_3000days_epoch_100_masked_ocean.npy')
     ai_lst = ((ai_norm_lst + 1) / 2) * (lst_max - lst_min) + lst_min
     ai_sm  = ((ai_norm_sm + 1) / 2) * (sm_max  - sm_min ) + sm_min
 
-    print("--- 4. LOADING COPULA TEST DATA (Chronological) ---")
+    print("--- LOADING COPULA TEST DATA (Chronological) ---")
     copula_lst = np.load('./data/generated/copula_gaussian_lst_chrono.npy')
     copula_sm  = np.load('./data/generated/copula_gaussian_sm_chrono.npy')
 
-    print("--- 5. CALCULATING PIXEL‑WISE BIVARIATE ENERGY DISTANCE ---")
+    print("--- CALCULATING PIXEL-WISE BIVARIATE ENERGY DISTANCE ---")
     land_mask = ~np.isnan(np.nanmean(real_lst_test, axis=0)) & \
                 ~np.isnan(np.nanmean(real_sm_test, axis=0))
 
@@ -100,11 +99,11 @@ def generate_bivariate_heatmaps_chrono():
     mean_ed_ai = np.nanmean(ed_map_ai)
     mean_ed_copula = np.nanmean(ed_map_copula)
 
-    print("--- 6. PLOTTING HEATMAPS ---")
+    print("--- PLOTTING HEATMAPS ---")
     fig, axes = plt.subplots(1, 2, figsize=(14, 6),
                              subplot_kw={'projection': ccrs.PlateCarree()})
 
-    vmax = max(np.nanmax(ed_map_ai), np.nanmax(ed_map_copula))
+    vmax = max(np.nanpercentile(ed_map_ai, 95), np.nanpercentile(ed_map_copula, 95))
     vmin = 0.0
 
     # AI map
@@ -112,7 +111,7 @@ def generate_bivariate_heatmaps_chrono():
                          vmin=vmin, vmax=vmax,
                          origin='lower', extent=map_extent,
                          transform=ccrs.PlateCarree())
-    axes[0].set_title(f"U‑Net Cross‑Variable Error\n(Mean Energy = {mean_ed_ai:.4f})", fontsize=14)
+    axes[0].set_title(f"Diffusion Cross-Variable Error\n(Mean Energy = {mean_ed_ai:.4f})", fontsize=14)
     axes[0].add_feature(cfeature.COASTLINE, linewidth=1)
     axes[0].add_feature(cfeature.BORDERS, linewidth=1)
     axes[0].set_axis_off()
@@ -128,7 +127,7 @@ def generate_bivariate_heatmaps_chrono():
     axes[1].set_axis_off()
 
     cbar = fig.colorbar(im0, ax=axes.ravel().tolist(), fraction=0.02, pad=0.04)
-    cbar.set_label("2‑Sample Energy Distance (Standardized)", fontsize=12)
+    cbar.set_label("2-Sample Energy Distance (Standardized)", fontsize=12)
 
     plt.suptitle("Bivariate Energy Distance: LST vs. Soil Moisture",
                  fontsize=16, y=1.02)

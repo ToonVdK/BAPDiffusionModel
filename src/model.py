@@ -1,6 +1,4 @@
-import torch
 from diffusers import UNet2DModel
-
 
 def get_satellite_unet():
     """
@@ -26,14 +24,14 @@ def get_satellite_unet():
         down_block_types=(
             "DownBlock2D",      # 64 channels (32x32)
             "DownBlock2D",      # 128 channels (16x16)
-            "AttnDownBlock2D",      # (or AttnDownBlock2D) 256 channels (8x8)
-            "AttnDownBlock2D",      # (or AttnDownBlock2D) 512 channels (4x4)
+            "AttnDownBlock2D",  # 256 channels (8x8)
+            "AttnDownBlock2D",  # 512 channels (4x4)
         ),
 
         # Standard Upsampling blocks
         up_block_types=(
-            "AttnUpBlock2D",        # (or AttnUpBlock2D) 512 channels (4x4)
-            "AttnUpBlock2D",        # (or AttnUpBlock2D) 256 channels (8x8)
+            "AttnUpBlock2D",    # 512 channels (4x4)
+            "AttnUpBlock2D",    # 256 channels (8x8)
             "UpBlock2D",        # 128 channels (16x16)
             "UpBlock2D",        # 64 channels (32x32)
         ),
@@ -44,6 +42,5 @@ def get_satellite_unet():
 
 # Quick test to make sure it compiles
 if __name__ == "__main__":
-    # Example shapes, we will need to confirm your actual shapes!
     test_model = get_satellite_unet()
     print(f"U-Net successfully initialized with {sum(p.numel() for p in test_model.parameters()):,} parameters.")

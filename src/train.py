@@ -13,6 +13,7 @@ from dataset import SatelliteDataset
 from model import get_satellite_unet
 
 class EarlyStopper:
+    # NOTE: I did not end up using the early stopper for the thesis, but I left it here in case anyone wants to use it.
     def __init__(self, patience=7, min_delta=0.0):
         self.patience = patience
         self.min_delta = min_delta
@@ -71,7 +72,6 @@ def train():
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
-    # --- VARIANCE PRESERVING SDE ---
     # The MissDiff paper adopts a Variance Preserving (VP) SDE.
     # In diffusers, DDPMScheduler is the discrete equivalent of this.
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
@@ -102,10 +102,9 @@ def train():
             timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (bsz,), device=device).long()
 
             # Add noise to the clean images according to the noise magnitude at each timestep
-            # (= forward diffusion process)
+            # ==> forward diffusion process!
             noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
 
-            # --- NEURAL NETWORK PREDICTION ---
             # Ask the U-Net to predict the noise that was added
             noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
 
@@ -138,7 +137,7 @@ def train():
         model.eval() # Turn off dropout/batchnorm for testing
         epoch_val_loss = 0.0
         
-        with torch.no_grad(): # Don't calculate gradients (saves massive VRAM)
+        with torch.no_grad(): # Don't calculate gradients
             for batch in val_dataloader:
                 clean_images, masks = batch
                 clean_images, masks = clean_images.to(device), masks.to(device)
@@ -167,23 +166,23 @@ def train():
         if (epoch + 1) % 10 == 0:
             print(f"\n--- Saving EMA Checkpoint at Epoch {epoch + 1} ---")
             
-            # 1. Store the noisy active weights in a temporary buffer
+            # Store the noisy active weights in a temporary buffer
             ema_model.store(model.parameters())
             
-            # 2. Copy the smooth EMA weights into the active model framework
+            # Copy the smooth EMA weights into the active model framework
             ema_model.copy_to(model.parameters())
             
-            # 3. Save the model (which currently holds the perfect EMA weights)
-            model.save_pretrained(f"./data/model_output/unet_ema_epoch_{epoch + 1}")
+            # Save the model (which currently holds the perfect EMA weights)
+            model.save_pretrained(f"./data/model_output/unet_epoch_{epoch + 1}")
             
-            # 4. Restore the noisy active weights back into the model so training can continue
+            # Restore the noisy active weights back into the model so training can continue
             ema_model.restore(model.parameters())
             print("Checkpoint saved successfully. Resuming training...\n")
 
     print("\nTraining finished!")
     print("\nCopying final EMA weights to active model...")
     ema_model.copy_to(model.parameters())
-    model.save_pretrained("./data/model_output/unet_ema_final")
+    model.save_pretrained("./data/model_output/unet_final")
 
     # --- PLOT & SAVE LOSS CURVE ---
     print("Generating loss curve plot...")
